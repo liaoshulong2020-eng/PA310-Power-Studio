@@ -44,13 +44,13 @@ dotnet build PA310PowerStudio.sln -c Release
 主程序输出位置：
 
 ```text
-src/PA300PowerStudio/bin/Release/net8.0-windows/PA300UpperMachineFull.exe
+src/PA300PowerStudio/bin/Release/net8.0-windows/PA310PowerStudio.exe
 ```
 
 ## 使用流程
 
 1. 打开 `PA310PowerStudio.sln`。
-2. 编译并运行 `PA300UpperMachineFull`。
+2. 编译并运行 `PA310PowerStudio`。
 3. 选择连接方式：
    - RS-232：选择 COM 口与波特率，PA310 常用 `115200`。
    - USB：需要 WinUSB 驱动。

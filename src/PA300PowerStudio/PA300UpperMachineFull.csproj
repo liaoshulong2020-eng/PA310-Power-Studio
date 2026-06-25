@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <AssemblyName>PA300UpperMachineFull</AssemblyName>
+    <AssemblyName>PA310PowerStudio</AssemblyName>
     <RootNamespace>PA300UpperMachineFull</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -14,4 +14,7 @@
     <PackageReference Include="System.IO.Ports" Version="10.0.5" />
     <PackageReference Include="System.Windows.Forms.DataVisualization" Version="1.0.0-prerelease.20110.1" />
   </ItemGroup>
+  <Target Name="CopyDevcon" AfterTargets="Build">
+    <Copy SourceFiles="$(ProjectDir)..\..\drivers\PA300-USB\Drivers\devcon_x64.exe" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(ProjectDir)..\..\drivers\PA300-USB\Drivers\devcon_x64.exe')" />
+  </Target>
 </Project>

@@ -17,6 +17,7 @@ public sealed class MainForm : Form
     private readonly ComboBox _cmbBaud = new() { DropDownStyle = ComboBoxStyle.DropDownList, MaximumSize = new Size(120, 0) };
     private readonly Button _btnRefreshPorts = new() { Text = "刷新设备" };
     private readonly Button _btnDiagnose = new() { Text = "连接诊断" };
+    private readonly Button _btnForceRelease = new() { Text = "强制释放USB", ForeColor = Color.DarkRed };
     private readonly Button _btnRepairDriver = new() { Text = "修复驱动" };
     private readonly Label _lblDevice = new() { AutoSize = true, Text = "等待扫描设备" };
 
@@ -171,7 +172,7 @@ public sealed class MainForm : Form
         _settings = SettingsStore.Load();
         _frameBuffer = new FixedSizeFrameBuffer(_settings.ChartCapacity);
 
-        Text = "PA300 Power Studio";
+        Text = "PA310 Power Studio";
         AutoScaleMode = AutoScaleMode.Dpi;
         Width = 1600;
         Height = 980;
@@ -287,7 +288,7 @@ public sealed class MainForm : Form
         var header = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(15, 23, 42), Padding = new Padding(24, 12, 20, 10) };
         var brand = new Label
         {
-            Text = "PA300  POWER STUDIO",
+            Text = "PA310  POWER STUDIO",
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 16, FontStyle.Bold),
             AutoSize = true,
@@ -331,7 +332,7 @@ public sealed class MainForm : Form
         sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var connection = NewCard("设备连接", "自动识别 PA300 的实际驱动模式");
-        var connectFields = NewFormGrid(6);
+        var connectFields = NewFormGrid(7);
         AddFormRow(connectFields, 0, "连接方式", _cmbConnType);
         AddFormRow(connectFields, 1, "串口 / 设备", _cmbCom);
         AddFormRow(connectFields, 2, "通信速率", _cmbBaud);
@@ -768,9 +769,6 @@ public sealed class MainForm : Form
         connectionTable.Controls.Add(new Label { Text = "端口", Anchor = AnchorStyles.Left, AutoSize = true }, 2, 2);
         connectionTable.Controls.Add(_numPort, 3, 2);
         var connectionButtons = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = true, AutoSize = false, Margin = new Padding(0) };
-        connectionButtons.Controls.Add(_btnRefreshPorts);
-        connectionButtons.Controls.Add(_btnConnect);
-        connectionButtons.Controls.Add(_btnDisconnect);
         connectionTable.Controls.Add(connectionButtons, 0, 3);
         connectionTable.SetColumnSpan(connectionButtons, 4);
         connectionGroup.Controls.Add(connectionTable);
@@ -1101,6 +1099,7 @@ public sealed class MainForm : Form
         _cmbPreset.SelectedIndexChanged += (_, _) => UpdatePresetDescription();
         _btnRefreshPorts.Click += (_, _) => RefreshPorts();
         _btnDiagnose.Click += (_, _) => ShowConnectionDiagnostics();
+        _btnForceRelease.Click += async (_, _) => await ForceReleasePortAsync();
         _btnRepairDriver.Click += (_, _) => RepairUsbDriver();
         _btnConnect.Click += async (_, _) => await ToggleConnectionAsync();
         _btnDisconnect.Click += async (_, _) => await DisconnectAsync();
@@ -1266,7 +1265,8 @@ public sealed class MainForm : Form
         var refresh = new Button { Text = "刷新设备" };
         var diagnose = new Button { Text = "连接诊断" };
         var repair = new Button { Text = "修复驱动" };
-        foreach (var button in new[] { refresh, diagnose, repair })
+        var forceRelease = new Button { Text = "强制释放 USB" };
+        foreach (var button in new[] { refresh, diagnose, repair, forceRelease })
         {
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderSize = 0;
@@ -1279,7 +1279,8 @@ public sealed class MainForm : Form
         refresh.Click += (_, _) => RefreshPorts();
         diagnose.Click += (_, _) => ShowConnectionDiagnostics();
         repair.Click += (_, _) => RepairUsbDriver();
-        actions.Controls.AddRange([refresh, diagnose, repair]);
+        forceRelease.Click += async (_, _) => await ForceReleasePortAsync(forceRelease);
+        actions.Controls.AddRange([refresh, diagnose, repair, forceRelease]);
         dialog.Controls.Add(actions);
         dialog.Controls.Add(info);
         dialog.ShowDialog(this);
@@ -1567,6 +1568,76 @@ public sealed class MainForm : Form
             directory = directory.Parent;
         }
         return null;
+    }
+
+    /// <summary>
+    /// 强制释放USB端口：通过 devcon 重启 PA300 设备，等效于物理拔插 USB。
+    /// </summary>
+    private async Task ForceReleasePortAsync(Button? sourceButton = null)
+    {
+        string devconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "devcon_x64.exe");
+        if (!File.Exists(devconPath))
+        {
+            var result = MessageBox.Show(
+                "找不到 devcon_x64.exe，是否在指定目录查找？",
+                "提示", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (result == DialogResult.Yes)
+            {
+                using var dialog = new OpenFileDialog
+                {
+                    Title = "请选择 devcon_x64.exe",
+                    Filter = "devcon_x64.exe|devcon_x64.exe",
+                    InitialDirectory = Path.GetFullPath(Path.Combine(
+                        AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\..\PA300-USB\Drivers"))
+                };
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                devconPath = dialog.FileName;
+            }
+            else return;
+        }
+
+        SetStatus("正在强制释放 USB 端口...");
+        var button = sourceButton ?? _btnForceRelease;
+        button.Enabled = false;
+
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = devconPath,
+                Arguments = @"restart ""USB\VID_04CC&PID_121B""",
+                UseShellExecute = true,
+                Verb = "runas", // 请求管理员权限
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                SetStatus("释放失败：无法启动 devcon");
+                return;
+            }
+
+            // 等待设备重启完成
+            await Task.Run(() => process.WaitForExit(15000));
+
+            SetStatus("等待设备重新就绪...");
+            await Task.Delay(3000);
+
+            // 刷新端口列表
+            RefreshPorts();
+            SetStatus("USB 端口已释放，请重新连接");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"释放失败: {ex.Message}");
+            MessageBox.Show($"无法释放 USB 端口\n{ex.Message}\n\n请手动重新插拔 USB 设备。",
+                "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            button.Enabled = true;
+        }
     }
 
     private async Task CleanupTransportAsync()
