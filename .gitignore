@@ -1,0 +1,35 @@
+# Build outputs
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# Visual Studio / Rider
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+
+# Local runtime data
+数据保存/
+*.log
+*.tmp
+tmp/
+
+# Packages / generated files
+*.nupkg
+packages/
+
+# Archives kept out of git; source folders and docs are included instead
+*.rar
+*.zip
+*.7z
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
