@@ -51,6 +51,8 @@ public sealed class MainForm : Form
     private readonly Button _btnApplyListConfig = new() { Text = "应用谐波测量列设置" };
     private readonly Button _btnRunSetup = new() { Text = "执行批量命令" };
     private readonly Button _btnReadAllConfig = new() { Text = "读取仪器全部配置", Enabled = false };
+    private readonly Button _btnSaveInstrumentSettings = new() { Text = "保存设置到仪器", Enabled = false };
+    private readonly NumericUpDown _numPanelSaveSlot = new() { Minimum = 1, Maximum = 4, Value = 1 };
     private readonly Button _btnRecommendedDefaults = new() { Text = "恢复推荐默认：电压/电流/PF/THD", Enabled = false };
 
     private readonly ComboBox _cmbWiring = NewCombo("P1W2", "P1W3", "P3W3", "P3W4", "V3A3");
@@ -413,7 +415,18 @@ public sealed class MainForm : Form
         configHeader.Controls.Add(_btnRecommendedDefaults);
         configHeader.Controls.Add(new Label
         {
-            Text = "先读取仪器当前值，再按分类修改并应用；读取失败的选项会标红，所有操作都会记录到底部运行日志。",
+            Text = "保存槽",
+            AutoSize = true,
+            Margin = new Padding(12, 10, 3, 0),
+            ForeColor = Color.FromArgb(71, 85, 105)
+        });
+        _numPanelSaveSlot.Width = 54;
+        _numPanelSaveSlot.Margin = new Padding(0, 8, 4, 0);
+        configHeader.Controls.Add(_numPanelSaveSlot);
+        configHeader.Controls.Add(_btnSaveInstrumentSettings);
+        configHeader.Controls.Add(new Label
+        {
+            Text = "应用=当前生效；保存设置=写入仪器内部配置文件，上电后更容易保持。",
             AutoSize = true, Margin = new Padding(14, 8, 0, 0), ForeColor = Color.FromArgb(71, 85, 105)
         });
         configPage.Controls.Add(configTabs);
@@ -1124,6 +1137,7 @@ public sealed class MainForm : Form
         _btnQuickThirdHarmonic.Click += async (_, _) => await ConfigureThirdHarmonicAsync();
         _btnMultiOddHarmonics.Click += async (_, _) => await ConfigureMultiOddHarmonicsAsync();
         _btnReadAllConfig.Click += async (_, _) => await ReadAllConfigAsync();
+        _btnSaveInstrumentSettings.Click += async (_, _) => await SaveInstrumentSettingsAsync();
         _btnRecommendedDefaults.Click += async (_, _) => await ApplyRecommendedDefaultsAsync();
         _btnApplyDisplay.Click += async (_, _) => await ApplyDisplayConfigAsync();
         _btnApplyStore.Click += async (_, _) => await ApplyStoreConfigAsync();
@@ -1705,7 +1719,7 @@ public sealed class MainForm : Form
                  {
                      _btnApplyInput, _btnApplyRange, _btnApplyProcessing, _btnApplyHarmonics, _btnQuickThirdHarmonic, _btnMultiOddHarmonics,
                      _btnReadAllConfig,
-                     _btnRecommendedDefaults,
+                     _btnRecommendedDefaults, _btnSaveInstrumentSettings,
                      _btnApplyDisplay, _btnApplyStore,
                      _btnIntegrationStart, _btnIntegrationStop, _btnIntegrationReset,
                      _btnRemote, _btnLocal, _btnLockPanel, _btnUnlockPanel,
@@ -2227,6 +2241,50 @@ public sealed class MainForm : Form
 
         if (resumePolling && _transport is not null)
             StartPolling();
+    }
+
+    private async Task SaveInstrumentSettingsAsync()
+    {
+        if (_transport is null) return;
+
+        int slot = (int)_numPanelSaveSlot.Value;
+        var answer = MessageBox.Show(
+            $"将把当前仪器设置保存到 PA310 内部 {slot} 号设置文件。\n\n" +
+            "这用于让仪器重启后更容易恢复当前量程、显示项、谐波等设置。\n" +
+            "是否继续？",
+            "保存设置到仪器",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (answer != DialogResult.Yes) return;
+
+        bool resumePolling = _pollTask is not null;
+        if (resumePolling)
+            await StopPollingAsync();
+
+        _btnSaveInstrumentSettings.Enabled = false;
+        try
+        {
+            await ExecuteSetterCommandsAsync([$":STORe:PANel INNER,{slot}"]);
+            SaveUiSettings();
+            SetStatus($"已保存仪器设置到内部 {slot} 号文件");
+            MessageBox.Show(
+                $"已发送保存命令：:STORe:PANel INNER,{slot}\n\n" +
+                "提示：不同固件对上电自动恢复的策略可能不同。建议断电重启后点击“读取仪器全部配置”确认。",
+                "保存完成",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"保存设置失败: {ex.Message}");
+            MessageBox.Show($"保存设置失败：\n{ex.Message}", "保存设置到仪器", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            _btnSaveInstrumentSettings.Enabled = _transport is not null;
+            if (resumePolling && _transport is not null)
+                StartPolling();
+        }
     }
 
     private async Task ConfigureAndRunIntegrationAsync(string action)
@@ -3186,3 +3244,4 @@ public sealed class MainForm : Form
         };
     }
 }
+
