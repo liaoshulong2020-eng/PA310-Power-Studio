@@ -1049,8 +1049,6 @@ public sealed class MainForm : Form
     private static string FormatDashboardValue(double value)
     {
         double abs = Math.Abs(value);
-        if (abs >= 1_000_000) return $"{value / 1_000_000:0.###} M";
-        if (abs >= 1_000) return $"{value / 1_000:0.###} k";
         if (abs > 0 && abs < 0.001) return value.ToString("0.###E+0", CultureInfo.InvariantCulture);
         return value.ToString("0.######", CultureInfo.InvariantCulture);
     }
@@ -1081,11 +1079,11 @@ public sealed class MainForm : Form
             "S" => h.Contains("视在功率") || h.StartsWith("S-"),
             "Q" => h.Contains("无功功率") || h.StartsWith("Q-"),
             "LAMBDA" => h.Contains("功率因数") || h.Contains("PF") || h.StartsWith("LAMBDA"),
-            "PHI" => h.Contains("相位角") || h.StartsWith("PHI"),
+            "PHI" => h.Contains("相位角") || h.Contains("相位差") || h == "PHI" || h.StartsWith("PHI-") || h.StartsWith("PHI "),
             "FU" => h.Contains("电压频率") || h.StartsWith("FU"),
             "FI" => h.Contains("电流频率") || h.StartsWith("FI"),
-            "UTHD" => h.Contains("电压总谐波") || h.StartsWith("UTHD"),
-            "ITHD" => h.Contains("电流总谐波") || h.StartsWith("ITHD"),
+            "UTHD" => h.Contains("电压总谐波") || h.Contains("电压 THD") || h.Contains("UTHD") || h.StartsWith("UTHD"),
+            "ITHD" => h.Contains("电流总谐波") || h.Contains("电流 THD") || h.Contains("ITHD") || h.StartsWith("ITHD"),
             _ => h.Contains(code)
         };
     }
@@ -2213,6 +2211,7 @@ public sealed class MainForm : Form
         _chkHarmonics.Checked = true;
         _numHarmonicElement.Value = 1;
         _numHarmonicDisplayOrder.Value = 50;
+        _numNormalCount.Value = 5;
         SetRecommendedDisplayPanelDefaults();
         _txtHeaderCmd.Text = ":NUMeric:NORMal:HEADer?";
         _txtQueryCmd.Text = ":NUMeric:NORMal:VALue?";
@@ -2227,6 +2226,12 @@ public sealed class MainForm : Form
             $":HARMonics:SYNChronize {_cmbHarmonicSync.Text},1",
             ":HARMonics:ORDer 1,50",
             ":HARMonics:DISPlay:ORDer 50",
+            ":NUMeric:NORMal:NUMber 5",
+            ":NUMeric:NORMal:ITEM1 U,1",
+            ":NUMeric:NORMal:ITEM2 I,1",
+            ":NUMeric:NORMal:ITEM3 P,1",
+            ":NUMeric:NORMal:ITEM4 LAMBDA,1",
+            ":NUMeric:NORMal:ITEM5 ITHD,1",
             BuildDisplayItemCommand(1, "U"),
             BuildDisplayItemCommand(2, "I"),
             BuildDisplayItemCommand(3, "P"),
@@ -2237,7 +2242,7 @@ public sealed class MainForm : Form
         await QueryAndLogAsync(":DISPlay?");
         await RefreshHeadersAsync();
         BuildDashboardFromDisplayPanels();
-        SetStatus("已恢复推荐默认：600V / 20A / A电压 / B电流 / C有功功率 / D功率因数");
+        SetStatus("已恢复推荐默认：600V / 20A / 输出列=电压、电流、有功功率、PF、电流THD");
 
         if (resumePolling && _transport is not null)
             StartPolling();
@@ -3239,9 +3244,10 @@ public sealed class MainForm : Form
             "PHI" => $"相位角 φ{suffix} (°)",
             "FU" => $"电压频率 fU{suffix} (Hz)",
             "FI" => $"电流频率 fI{suffix} (Hz)",
+            "UTHD" => $"电压总谐波畸变率 UTHD{suffix} (%)",
+            "ITHD" => $"电流总谐波畸变率 ITHD{suffix} (%)",
             "NONE" => "未配置",
             _ => header
         };
     }
 }
-
